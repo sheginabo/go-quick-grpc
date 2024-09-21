@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package pb;
+
+import "rpc.hello.proto";
+
+option go_package = "github.com/sheginabo/go-quick-grpc/internal/pb";
+
+service GoQuickGRPC {
+  rpc SendHello (HelloRequest) returns (HelloResponse) {}
+}

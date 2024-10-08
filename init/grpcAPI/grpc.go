@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"net"
+	"time"
 )
 
 type Module struct {
@@ -60,11 +61,38 @@ func (module *Module) Run(ctx context.Context, waitGroup *errgroup.Group) {
 		return nil
 	})
 
+	//waitGroup.Go(func() error {
+	//	<-ctx.Done()
+	//	log.Info().Msg("graceful shutdown gRPC server")
+	//	module.GrpcServer.GracefulStop()
+	//	log.Info().Msg("graceful shutdown gRPC server done")
+	//
+	//	return nil
+	//})
+
 	waitGroup.Go(func() error {
 		<-ctx.Done()
 		log.Info().Msg("graceful shutdown gRPC server")
-		module.GrpcServer.GracefulStop()
-		log.Info().Msg("graceful shutdown gRPC server done")
+
+		done := make(chan struct{})
+		go func() {
+			module.GrpcServer.GracefulStop()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			log.Info().Msg("graceful shutdown gRPC server done")
+		//case <-time.After(30 * time.Second): // 設置適當的超時時間
+		//	log.Warn().Msg("graceful shutdown timed out, forcing stop")
+		//	module.GrpcServer.Stop()
+		//	return errors.New("gRPC server shutdown timed out")
+		case t := <-time.After(30 * time.Second):
+			log.Warn().Msgf("graceful shutdown timed out at %v, forcing stop", t)
+			module.GrpcServer.Stop()
+			return errors.New("gRPC server shutdown timed out")
+		}
+
 		return nil
 	})
 }

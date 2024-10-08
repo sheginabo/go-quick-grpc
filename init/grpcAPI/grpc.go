@@ -3,6 +3,7 @@ package grpcAPI
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/rs/zerolog/log"
 	"github.com/sheginabo/go-quick-grpc/internal/pb"
 	"github.com/sheginabo/go-quick-grpc/internal/presentation/handlers"
@@ -61,18 +62,12 @@ func (module *Module) Run(ctx context.Context, waitGroup *errgroup.Group) {
 		return nil
 	})
 
-	//waitGroup.Go(func() error {
-	//	<-ctx.Done()
-	//	log.Info().Msg("graceful shutdown gRPC server")
-	//	module.GrpcServer.GracefulStop()
-	//	log.Info().Msg("graceful shutdown gRPC server done")
-	//
-	//	return nil
-	//})
-
 	waitGroup.Go(func() error {
 		<-ctx.Done()
 		log.Info().Msg("graceful shutdown gRPC server")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
 		done := make(chan struct{})
 		go func() {
@@ -83,14 +78,14 @@ func (module *Module) Run(ctx context.Context, waitGroup *errgroup.Group) {
 		select {
 		case <-done:
 			log.Info().Msg("graceful shutdown gRPC server done")
-		//case <-time.After(30 * time.Second): // 設置適當的超時時間
-		//	log.Warn().Msg("graceful shutdown timed out, forcing stop")
+		//case t := <-time.After(10 * time.Second): // 10s timeout 1 缺點只提供時間戳記
+		//	log.Warn().Msgf("graceful shutdown timed out at %v, forcing stop", t)
 		//	module.GrpcServer.Stop()
 		//	return errors.New("gRPC server shutdown timed out")
-		case t := <-time.After(30 * time.Second):
-			log.Warn().Msgf("graceful shutdown timed out at %v, forcing stop", t)
+		case <-shutdownCtx.Done(): // 10s timeout 2 提供更多資訊
+			log.Warn().Err(shutdownCtx.Err()).Msg("graceful shutdown timed out, forcing stop")
 			module.GrpcServer.Stop()
-			return errors.New("gRPC server shutdown timed out")
+			return fmt.Errorf("graceful shutdown timed out: %w", shutdownCtx.Err())
 		}
 
 		return nil
